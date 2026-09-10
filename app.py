@@ -14,7 +14,6 @@ st.set_page_config(page_title="Multi-Source Medical RAG Assistant", page_icon="ð
 
 # Memuat token API dari file .env lokal
 load_dotenv()
-# Pastikan file .env Anda berisi variabel: GROQ_API_KEY=your_groq_api_key_here
 groq_api_key = os.getenv("GROQ_API_KEY")
 
 if not groq_api_key:
@@ -29,18 +28,18 @@ if not groq_api_key:
 
 @st.cache_resource
 def load_resources():
-    # 1. Inisialisasi Embeddings (tetap menggunakan HuggingFace karena sangat ringan & lokal)
+    # 1. Inisialisasi Embeddings
     embeddings = HuggingFaceEmbeddings(model_name='sentence-transformers/all-MiniLM-L6-v2')
 
     # Mendapatkan direktori tempat file app.py berada
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-    # 2. Memuat kembali vector database terpisah dari direktori lokal dengan absolute path
+    # 2. Memuat kembali vector database
     db_pdf = Chroma(persist_directory=os.path.join(BASE_DIR, "chroma_db_pdf (1)"), embedding_function=embeddings)
     db_json = Chroma(persist_directory=os.path.join(BASE_DIR, "chroma_db_json (1)"), embedding_function=embeddings)
     db_csv = Chroma(persist_directory=os.path.join(BASE_DIR, "chroma_db_csv (3)"), embedding_function=embeddings)
     
-    # 3. Inisialisasi LLM menggunakan Groq dengan model yang tersedia
+    # 3. Inisialisasi LLM menggunakan Groq
     llm_groq = ChatGroq(
         model="openai/gpt-oss-20b",
         temperature=0.0
@@ -48,11 +47,11 @@ def load_resources():
 
     return db_pdf, db_json, db_csv, llm_groq
 
-# Memuat resource (database & Groq LLM di-cache agar efisien)
+# Memuat resource
 db_pdf, db_json, db_csv, llm_groq = load_resources()
 
 # 4. Konfigurasi Prompt & Retriever
-template = """Gunakan konteks berikut untuk menjawab pertanyaan. Jika Anda tidak tahu jawabannya, katakan saja bahwa Anda tidak tahu.
+template = """Gunakan konteks berikut untuk menjawab pertanyaan. Jika Anda tidak tahu jawabannya atau konteks tidak relevan, katakan saja bahwa Anda tidak tahu.
 
 Konteks:
 {context}
@@ -76,7 +75,20 @@ def retrieve_multi_source_docs(query):
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
-# 5. Susun RAG Chain menggunakan LCEL dengan Groq & Output Parser
+# Fungsi Deteksi Pertanyaan Medis
+def is_medical_query(query: str) -> bool:
+    """Mengecek apakah pertanyaan mengandung kata kunci medis/kesehatan."""
+    medical_keywords = [
+        "symptom", "gejala", "disease", "penyakit", "treatment", "pengobatan",
+        "doctor", "dokter", "hospital", "rumah sakit", "medicine", "obat",
+        "health", "kesehatan", "patient", "pasien", "diagnosis", "syndrome",
+        "glaucoma", "cancer", "fever", "demam", "pain", "nyeri", "infection",
+        "infeksi", "therapy", "terapi", "virus", "bakteri", "dosis", "dose"
+    ]
+    query_lower = query.lower()
+    return any(keyword in query_lower for keyword in medical_keywords)
+
+# 5. Susun RAG Chain
 rag_chain_bio = (
     {
         "context": RunnableLambda(retrieve_multi_source_docs) | RunnableLambda(format_docs), 
@@ -100,12 +112,14 @@ if user_query:
         st.subheader("Jawaban:")
         st.write(response_bio)
         
-        st.subheader("Sumber Dokumen:")
-        retrieved_docs = retrieve_multi_source_docs(user_query)
-        
-        for i, doc in enumerate(retrieved_docs):
-            source_name = doc.metadata.get('source') or doc.metadata.get('file_name') or doc.metadata.get('source_file') or 'unknown'
-            display_name = os.path.basename(source_name) if source_name != 'unknown' else 'Database Lokal'
+        # PERBAIKAN: Hanya tampilkan sumber dokumen jika query terdeteksi seputar medis
+        if is_medical_query(user_query):
+            st.subheader("Sumber Dokumen:")
+            retrieved_docs = retrieve_multi_source_docs(user_query)
             
-            with st.expander(f"Dokumen {i+1} (Sumber: {display_name})"):
-                st.write(doc.page_content)
+            for i, doc in enumerate(retrieved_docs):
+                source_name = doc.metadata.get('source') or doc.metadata.get('file_name') or doc.metadata.get('source_file') or 'unknown'
+                display_name = os.path.basename(source_name) if source_name != 'unknown' else 'Database Lokal'
+                
+                with st.expander(f"Dokumen {i+1} (Sumber: {display_name})"):
+                    st.write(doc.page_content)
