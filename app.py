@@ -95,17 +95,24 @@ user_query = st.text_input("Masukkan pertanyaan Anda (Contoh: What are the sympt
 
 if user_query:
     with st.spinner("Sedang mencari jawaban..."):
-        response_bio = rag_chain_bio.invoke(user_query)
-        
-        st.subheader("Jawaban:")
-        st.write(response_bio)
-        
-        st.subheader("Sumber Dokumen:")
-        retrieved_docs = retrieve_multi_source_docs(user_query)
-        
-        for i, doc in enumerate(retrieved_docs):
-            source_name = doc.metadata.get('source') or doc.metadata.get('file_name') or doc.metadata.get('source_file') or 'unknown'
-            display_name = os.path.basename(source_name) if source_name != 'unknown' else 'Database Lokal'
+        try:
+            # Ambil dokumen pendukung sekali saja untuk efisiensi
+            retrieved_docs = retrieve_multi_source_docs(user_query)
+            response_bio = rag_chain_bio.invoke(user_query)
             
-            with st.expander(f"Dokumen {i+1} (Sumber: {display_name})"):
-                st.write(doc.page_content)
+            st.subheader("Jawaban:")
+            st.write(response_bio)
+            
+            # Hanya tampilkan sumber jika pertanyaan relevan
+            if is_context_relevant(user_query, llm_groq):
+                st.subheader("Sumber Dokumen:")
+                for i, doc in enumerate(retrieved_docs):
+                    source_name = doc.metadata.get('source') or doc.metadata.get('file_name') or doc.metadata.get('source_file') or 'unknown'
+                    display_name = os.path.basename(source_name) if source_name != 'unknown' else 'Database Lokal'
+                    
+                    with st.expander(f"Dokumen {i+1} (Sumber: {display_name})"):
+                        st.write(doc.page_content)
+                        
+        except Exception as e:
+            st.error("Terjadi kesalahan saat membaca database. Pastikan file database SQLite3 di GitHub terunggah dengan sempurna.")
+            st.exception(e)
