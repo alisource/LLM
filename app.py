@@ -14,7 +14,6 @@ st.set_page_config(page_title="Multi-Source Medical RAG Assistant", page_icon="ð
 
 # Memuat token API dari file .env lokal
 load_dotenv()
-# Pastikan file .env Anda berisi variabel: GROQ_API_KEY=your_groq_api_key_here
 groq_api_key = os.getenv("GROQ_API_KEY")
 
 if not groq_api_key:
@@ -29,7 +28,7 @@ if not groq_api_key:
 
 @st.cache_resource
 def load_resources():
-    # 1. Inisialisasi Embeddings (tetap menggunakan HuggingFace karena sangat ringan & lokal)
+    # 1. Inisialisasi Embeddings
     embeddings = HuggingFaceEmbeddings(model_name='sentence-transformers/all-MiniLM-L6-v2')
 
     # Mendapatkan direktori tempat file app.py berada
@@ -40,7 +39,7 @@ def load_resources():
     db_json = Chroma(persist_directory=os.path.join(BASE_DIR, "chroma_db_json (1)"), embedding_function=embeddings)
     db_csv = Chroma(persist_directory=os.path.join(BASE_DIR, "chroma_db_csv (3)"), embedding_function=embeddings)
     
-    # 3. Inisialisasi LLM menggunakan Groq dengan model yang tersedia
+    # 3. Inisialisasi LLM menggunakan Groq
     llm_groq = ChatGroq(
         model="openai/gpt-oss-20b",
         temperature=0.0
@@ -48,7 +47,7 @@ def load_resources():
 
     return db_pdf, db_json, db_csv, llm_groq
 
-# Memuat resource (database & Groq LLM di-cache agar efisien)
+# Memuat resource
 db_pdf, db_json, db_csv, llm_groq = load_resources()
 
 # 4. Konfigurasi Prompt & Retriever
@@ -76,7 +75,16 @@ def retrieve_multi_source_docs(query):
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
-# 5. Susun RAG Chain menggunakan LCEL dengan Groq & Output Parser
+# === PERBAIKAN: Didefinisikan fungsi is_context_relevant di sini ===
+def is_context_relevant(query, llm):
+    check_prompt = f"Apakah pertanyaan berikut berkaitan dengan topik medis, kesehatan, atau obat-obatan? Jawab HANYA 'YA' atau 'TIDAK'.\n\nPertanyaan: {query}"
+    try:
+        response = llm.invoke(check_prompt).content.strip().upper()
+        return "YA" in response
+    except Exception:
+        return True  # Fallback jika Groq API mengalami error sementara
+
+# 5. Susun RAG Chain menggunakan LCEL
 rag_chain_bio = (
     {
         "context": RunnableLambda(retrieve_multi_source_docs) | RunnableLambda(format_docs), 
