@@ -1,2 +1,5 @@
 *.sqlite3 filter=lfs diff=lfs merge=lfs -text
 *.bin filter=lfs diff=lfs merge=lfs -text
+chroma_db_pdf[[:space:]](1)/** filter=lfs diff=lfs merge=lfs -text
+chroma_db_json[[:space:]](1)/** filter=lfs diff=lfs merge=lfs -text
+chroma_db_csv[[:space:]](3)/** filter=lfs diff=lfs merge=lfs -text
