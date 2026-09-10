@@ -36,9 +36,9 @@ def load_resources():
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
     # 2. Memuat kembali vector database terpisah dari direktori lokal dengan absolute path
-    db_pdf = Chroma(persist_directory=os.path.join(BASE_DIR, "chroma_db_pdf"), embedding_function=embeddings)
-    db_json = Chroma(persist_directory=os.path.join(BASE_DIR, "chroma_db_json"), embedding_function=embeddings)
-    db_csv = Chroma(persist_directory=os.path.join(BASE_DIR, "chroma_db_csv"), embedding_function=embeddings)
+    db_pdf = Chroma(persist_directory=os.path.join(BASE_DIR, "chroma_db_pdf (1)"), embedding_function=embeddings)
+    db_json = Chroma(persist_directory=os.path.join(BASE_DIR, "chroma_db_json (1)"), embedding_function=embeddings)
+    db_csv = Chroma(persist_directory=os.path.join(BASE_DIR, "chroma_db_csv (3)"), embedding_function=embeddings)
     
     # 3. Inisialisasi LLM menggunakan Groq dengan model yang tersedia
     llm_groq = ChatGroq(
