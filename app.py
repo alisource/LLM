@@ -14,6 +14,7 @@ st.set_page_config(page_title="Multi-Source Medical RAG Assistant", page_icon="ð
 
 # Memuat token API dari file .env lokal
 load_dotenv()
+# Pastikan file .env Anda berisi variabel: GROQ_API_KEY=your_groq_api_key_here
 groq_api_key = os.getenv("GROQ_API_KEY")
 
 if not groq_api_key:
@@ -39,7 +40,7 @@ def load_resources():
     db_json = Chroma(persist_directory=os.path.join(BASE_DIR, "chroma_db_json (1)"), embedding_function=embeddings)
     db_csv = Chroma(persist_directory=os.path.join(BASE_DIR, "chroma_db_csv (3)"), embedding_function=embeddings)
     
-    # 3. Inisialisasi LLM menggunakan Groq dengan model yang diminta
+    # 3. Inisialisasi LLM menggunakan Groq dengan model yang tersedia
     llm_groq = ChatGroq(
         model="openai/gpt-oss-20b",
         temperature=0.0
@@ -50,14 +51,8 @@ def load_resources():
 # Memuat resource (database & Groq LLM di-cache agar efisien)
 db_pdf, db_json, db_csv, llm_groq = load_resources()
 
-# 4. Konfigurasi Prompt & Retriever (Memperketat Prompt Behavior untuk Penanganan Non-Medis)
+# 4. Konfigurasi Prompt & Retriever
 template = """Gunakan konteks berikut untuk menjawab pertanyaan. Jika Anda tidak tahu jawabannya, katakan saja bahwa Anda tidak tahu.
-
-Aturan Tambahan:
-1. Jika pertanyaan BUKAN tentang kesehatan/medis (seperti politik, pengetahuan umum, sejarah):
-   - Jawab pertanyaan tersebut secara langsung berdasarkan pengetahuan umum Anda.
-   - DILARANG KERAS menyertakan istilah medis, saran kesehatan, atau disclaimer medis/dokter sama sekali.
-2. Jika pertanyaan tentang kesehatan/medis, gunakan konteks di bawah untuk menjawab.
 
 Konteks:
 {context}
@@ -81,6 +76,17 @@ def retrieve_multi_source_docs(query):
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
+# 5. Susun RAG Chain menggunakan LCEL dengan Groq & Output Parser
+rag_chain_bio = (
+    {
+        "context": RunnableLambda(retrieve_multi_source_docs) | RunnableLambda(format_docs), 
+        "question": RunnablePassthrough()
+    }
+    | PROMPT
+    | llm_groq
+    | StrOutputParser()
+)
+
 # --- Antarmuka Pengguna (Streamlit UI) ---
 st.title("Medical RAG Assistant (Groq Cloud)")
 st.write("Tanyakan informasi kesehatan berdasarkan basis data lokal Anda (PDF, JSON, & CSV).")
@@ -89,28 +95,17 @@ user_query = st.text_input("Masukkan pertanyaan Anda (Contoh: What are the sympt
 
 if user_query:
     with st.spinner("Sedang mencari jawaban..."):
-        # 1. Ambil dokumen dari ChromaDB
-        retrieved_docs = retrieve_multi_source_docs(user_query)
-        context_text = format_docs(retrieved_docs)
+        response_bio = rag_chain_bio.invoke(user_query)
         
-        # 2. Kirim prompt ke LLM
-        formatted_prompt = PROMPT.format(context=context_text, question=user_query)
-        response_bio = llm_groq.invoke(formatted_prompt).content
-        
-        # 3. Tampilkan Jawaban LLM
         st.subheader("Jawaban:")
         st.write(response_bio)
         
-        # 4. HANYA TAMPILKAN SUMBER DOKUMEN JIKA JAWABAN MENGGUNAKAN KONTEKS MEDIS
-        # (Memeriksa apakah jawaban mengandung kata medis/disclaimer atau bukan pertanyaan umum)
-        is_general_response = "President" in response_bio or "Putin" in response_bio or "tidak berkaitan" in response_bio.lower()
+        st.subheader("Sumber Dokumen:")
+        retrieved_docs = retrieve_multi_source_docs(user_query)
         
-        if not is_general_response:
-            st.subheader("Sumber Dokumen:")
-            for i, doc in enumerate(retrieved_docs):
-                source_name = doc.metadata.get('source') or doc.metadata.get('file_name') or doc.metadata.get('source_file') or 'unknown'
-                display_name = os.path.basename(source_name) if source_name != 'unknown' else 'Database Lokal'
-                
-                with st.expander(f"Dokumen {i+1} (Sumber: {display_name})"):
-                    st.write(doc.page_content)
+        for i, doc in enumerate(retrieved_docs):
+            source_name = doc.metadata.get('source') or doc.metadata.get('file_name') or doc.metadata.get('source_file') or 'unknown'
+            display_name = os.path.basename(source_name) if source_name != 'unknown' else 'Database Lokal'
+            
+            with st.expander(f"Dokumen {i+1} (Sumber: {display_name})"):
                 st.write(doc.page_content)
