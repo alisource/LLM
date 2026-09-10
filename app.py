@@ -100,12 +100,16 @@ if user_query:
         st.subheader("Jawaban:")
         st.write(response_bio)
         
-        st.subheader("Sumber Dokumen:")
-        retrieved_docs = retrieve_multi_source_docs(user_query)
-        
-        for i, doc in enumerate(retrieved_docs):
-            source_name = doc.metadata.get('source') or doc.metadata.get('file_name') or doc.metadata.get('source_file') or 'unknown'
-            display_name = os.path.basename(source_name) if source_name != 'unknown' else 'Database Lokal'
+       # Logika tambahan: Hanya tampilkan sumber dokumen jika pertanyaan sesuai konteks medis
+        if is_context_relevant(user_query, llm_groq):
+            st.subheader("Sumber Dokumen:")
+            retrieved_docs = retrieve_multi_source_docs(user_query)
             
-            with st.expander(f"Dokumen {i+1} (Sumber: {display_name})"):
-                st.write(doc.page_content)
+            for i, doc in enumerate(retrieved_docs):
+                source_name = doc.metadata.get('source') or doc.metadata.get('file_name') or doc.metadata.get('source_file') or 'unknown'
+                display_name = os.path.basename(source_name) if source_name != 'unknown' else 'Database Lokal'
+                
+                with st.expander(f"Dokumen {i+1} (Sumber: {display_name})"):
+                    st.write(doc.page_content)
+
+        
