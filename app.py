@@ -14,6 +14,7 @@ st.set_page_config(page_title="Multi-Source Medical RAG Assistant", page_icon="ð
 
 # Memuat token API dari file .env lokal
 load_dotenv()
+# Pastikan file .env Anda berisi variabel: GROQ_API_KEY=your_groq_api_key_here
 groq_api_key = os.getenv("GROQ_API_KEY")
 
 if not groq_api_key:
@@ -28,7 +29,7 @@ if not groq_api_key:
 
 @st.cache_resource
 def load_resources():
-    # 1. Inisialisasi Embeddings
+    # 1. Inisialisasi Embeddings (tetap menggunakan HuggingFace karena sangat ringan & lokal)
     embeddings = HuggingFaceEmbeddings(model_name='sentence-transformers/all-MiniLM-L6-v2')
 
     # Mendapatkan direktori tempat file app.py berada
@@ -39,7 +40,7 @@ def load_resources():
     db_json = Chroma(persist_directory=os.path.join(BASE_DIR, "chroma_db_json (1)"), embedding_function=embeddings)
     db_csv = Chroma(persist_directory=os.path.join(BASE_DIR, "chroma_db_csv (3)"), embedding_function=embeddings)
     
-    # 3. Inisialisasi LLM menggunakan Groq
+    # 3. Inisialisasi LLM menggunakan Groq dengan model yang tersedia
     llm_groq = ChatGroq(
         model="openai/gpt-oss-20b",
         temperature=0.0
@@ -47,7 +48,7 @@ def load_resources():
 
     return db_pdf, db_json, db_csv, llm_groq
 
-# Memuat resource
+# Memuat resource (database & Groq LLM di-cache agar efisien)
 db_pdf, db_json, db_csv, llm_groq = load_resources()
 
 # 4. Konfigurasi Prompt & Retriever
@@ -75,16 +76,7 @@ def retrieve_multi_source_docs(query):
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
-# Fungsi tambahan: Memeriksa relevansi topik sebelum menampilkan sumber dokumen
-def is_context_relevant(query, llm):
-    check_prompt = f"Apakah pertanyaan berikut berkaitan dengan topik medis, kesehatan, atau obat-obatan? Jawab HANYA 'YA' atau 'TIDAK'.\n\nPertanyaan: {query}"
-    try:
-        response = llm.invoke(check_prompt).content.strip().upper()
-        return "YA" in response
-    except Exception:
-        return True  # Fallback jika terjadi error pada LLM
-
-# 5. Susun RAG Chain menggunakan LCEL
+# 5. Susun RAG Chain menggunakan LCEL dengan Groq & Output Parser
 rag_chain_bio = (
     {
         "context": RunnableLambda(retrieve_multi_source_docs) | RunnableLambda(format_docs), 
@@ -103,24 +95,17 @@ user_query = st.text_input("Masukkan pertanyaan Anda (Contoh: What are the sympt
 
 if user_query:
     with st.spinner("Sedang mencari jawaban..."):
-        try:
-            # Ambil dokumen pendukung sekali saja untuk efisiensi
-            retrieved_docs = retrieve_multi_source_docs(user_query)
-            response_bio = rag_chain_bio.invoke(user_query)
+        response_bio = rag_chain_bio.invoke(user_query)
+        
+        st.subheader("Jawaban:")
+        st.write(response_bio)
+        
+        st.subheader("Sumber Dokumen:")
+        retrieved_docs = retrieve_multi_source_docs(user_query)
+        
+        for i, doc in enumerate(retrieved_docs):
+            source_name = doc.metadata.get('source') or doc.metadata.get('file_name') or doc.metadata.get('source_file') or 'unknown'
+            display_name = os.path.basename(source_name) if source_name != 'unknown' else 'Database Lokal'
             
-            st.subheader("Jawaban:")
-            st.write(response_bio)
-            
-            # Hanya tampilkan sumber jika pertanyaan relevan
-            if is_context_relevant(user_query, llm_groq):
-                st.subheader("Sumber Dokumen:")
-                for i, doc in enumerate(retrieved_docs):
-                    source_name = doc.metadata.get('source') or doc.metadata.get('file_name') or doc.metadata.get('source_file') or 'unknown'
-                    display_name = os.path.basename(source_name) if source_name != 'unknown' else 'Database Lokal'
-                    
-                    with st.expander(f"Dokumen {i+1} (Sumber: {display_name})"):
-                        st.write(doc.page_content)
-                        
-        except Exception as e:
-            st.error("Terjadi kesalahan saat membaca database. Pastikan file database SQLite3 di GitHub terunggah dengan sempurna.")
-            st.exception(e)
+            with st.expander(f"Dokumen {i+1} (Sumber: {display_name})"):
+                st.write(doc.page_content)
