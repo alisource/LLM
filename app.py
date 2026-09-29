@@ -75,7 +75,6 @@ def retrieve_multi_source_docs(query):
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
-# === PERBAIKAN: Didefinisikan fungsi is_context_relevant di sini ===
 def is_context_relevant(query, llm):
     check_prompt = f"Apakah pertanyaan berikut berkaitan dengan topik medis, kesehatan, atau obat-obatan? Jawab HANYA 'YA' atau 'TIDAK'.\n\nPertanyaan: {query}"
     try:
@@ -109,7 +108,12 @@ if user_query:
             response_bio = rag_chain_bio.invoke(user_query)
             
             st.subheader("Jawaban:")
-            st.write(response_bio)
+            
+            # === PERBAIKAN UTAMA DI SINI ===
+            # Mengubah tag <br> atau <br/> agar dirender sebagai format HTML/Markdown yang benar
+            cleaned_response = response_bio.replace("<br>", "<br>").replace("<br/>", "<br>")
+            st.markdown(cleaned_response, unsafe_allow_html=True)
+            # ===============================
             
             # Hanya tampilkan sumber jika pertanyaan relevan
             if is_context_relevant(user_query, llm_groq):
